@@ -1,0 +1,14 @@
+{
+  "name": "aviation-weather-api",
+  "version": "1.0.0",
+  "description": "航空气象电报解码 API 服务 - METAR/TAF 编解码与归档",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "better-sqlite3": "^9.2.2"
+  }
+}
