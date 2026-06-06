@@ -71,6 +71,7 @@ function calculateAirportCrosswinds(decodedReport, runwayHeadings = []) {
   const windUnit = decodedReport.wind.speed?.unit || 'KT';
 
   const results = [];
+  let isEstimated = false;
 
   for (const rwyHdg of runwayHeadings) {
     const calc = calculateCrosswindComponents(rwyHdg, windDirection, windSpeed, windUnit);
@@ -79,12 +80,31 @@ function calculateAirportCrosswinds(decodedReport, runwayHeadings = []) {
     }
   }
 
-  if (results.length === 0 && decodedReport.airport) {
-    const defaultRunways = [36, 18, 09, 27];
-    for (const rwyHdg of defaultRunways) {
-      const calc = calculateCrosswindComponents(rwyHdg, windDirection, windSpeed, windUnit);
-      if (calc) {
-        results.push(calc);
+  if (results.length === 0) {
+    isEstimated = true;
+    const estimatedRunways = new Set();
+
+    const rwyOpposite = Math.round(((windDirection + 180) % 360) / 10) * 10;
+    const rwySame = Math.round(windDirection / 10) * 10;
+
+    estimatedRunways.add(rwyOpposite / 10);
+    estimatedRunways.add(rwySame / 10);
+
+    for (const offset of [-10, 10]) {
+      const rwy = Math.round(((windDirection + 180 + offset + 360) % 360) / 10) * 10;
+      estimatedRunways.add(rwy / 10);
+    }
+
+    const sortedRunways = Array.from(estimatedRunways).sort((a, b) => a - b);
+
+    for (const rwyHdg of sortedRunways) {
+      if (rwyHdg >= 1 && rwyHdg <= 36) {
+        const calc = calculateCrosswindComponents(rwyHdg, windDirection, windSpeed, windUnit);
+        if (calc) {
+          calc.isEstimated = true;
+          calc.runwayNote = '跑道方向为根据风向估算';
+          results.push(calc);
+        }
       }
     }
   }
@@ -99,8 +119,9 @@ function calculateAirportCrosswinds(decodedReport, runwayHeadings = []) {
     calculations: results,
     maxCrosswindKt: Math.round(maxCrosswind * 10) / 10,
     anyExceedsLimit: results.some(r => r.exceedsLimit),
+    isEstimated,
     summary: results.length > 0
-      ? `最大侧风 ${Math.round(maxCrosswind * 10) / 10} 节${results.some(r => r.exceedsLimit) ? '，存在超过25节限制的跑道' : ''}`
+      ? `${isEstimated ? '【估算】' : ''}最大侧风 ${Math.round(maxCrosswind * 10) / 10} 节${results.some(r => r.exceedsLimit) ? '，存在超过25节限制的跑道' : ''}${isEstimated ? '（未提供真实跑道方向，侧风为根据风向估算值）' : ''}`
       : '无法计算侧风分量'
   };
 }

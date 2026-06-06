@@ -11,6 +11,7 @@ const { decodeTAF } = require('../decoders/taf');
 const { calculateAirportCrosswinds } = require('./crosswind');
 const { assessAirportRisk, assessBriefingRisk, RISK_LEVELS } = require('./risk');
 const { findAlternateAirports } = require('./alternate');
+const { normalizeTafForecast } = require('./taf_utils');
 
 function parseUTCTime(timeStr) {
   if (!timeStr) return null;
@@ -26,14 +27,17 @@ function parseUTCTime(timeStr) {
 }
 
 function findTafForecastForTime(decodedTaf, targetTime) {
-  if (!decodedTaf || !decodedTaf.forecast || !targetTime) return null;
+  if (!decodedTaf || !targetTime) return null;
+
+  const forecasts = normalizeTafForecast(decodedTaf);
+  if (forecasts.length === 0) return null;
 
   const targetDate = typeof targetTime === 'string' ? new Date(targetTime) : targetTime;
   const targetTs = targetDate.getTime();
 
   let bestMatch = null;
 
-  for (const forecast of decodedTaf.forecast) {
+  for (const forecast of forecasts) {
     if (!forecast.period) continue;
 
     const fromTs = forecast.period.from?.timestamp ? new Date(forecast.period.from.timestamp).getTime() : null;
@@ -95,6 +99,10 @@ async function getAirportWeatherData(airportCode, targetTime, airportType, runwa
     let decodedTaf = tafReport.decoded;
     if (!decodedTaf && tafReport.raw) {
       decodedTaf = decodeTAF(tafReport.raw);
+    }
+
+    if (decodedTaf) {
+      decodedTaf.forecast = normalizeTafForecast(decodedTaf);
     }
 
     result.taf = {

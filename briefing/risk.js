@@ -1,4 +1,5 @@
 const { convertToKnots } = require('./crosswind');
+const { normalizeTafForecast } = require('./taf_utils');
 
 const RISK_LEVELS = {
   GREEN: 'green',
@@ -328,7 +329,13 @@ function assessAirportRisk(decodedMetar, decodedTaf, airportCode, airportType, c
     allRisks.push(...checkClouds(decodedMetar, airportCode, airportType));
   }
 
-  if (decodedTaf && decodedTaf.forecast) {
+  if (decodedTaf) {
+    if (!decodedTaf.forecast) {
+      decodedTaf.forecast = normalizeTafForecast(decodedTaf);
+    }
+  }
+
+  if (decodedTaf && decodedTaf.forecast && decodedTaf.forecast.length > 0) {
     for (const forecast of decodedTaf.forecast) {
       if (forecast.period && forecast.elements) {
         const tafRisks = [];

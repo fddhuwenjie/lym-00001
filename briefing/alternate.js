@@ -1,8 +1,10 @@
 const { airportList, findAirport } = require('../data/airports');
 const { getLatestReport, getReportByTimeAndType } = require('../db/database');
 const { decodeMETAR } = require('../decoders/metar');
+const { decodeTAF } = require('../decoders/taf');
 const { assessAirportRisk } = require('./risk');
 const { calculateAirportCrosswinds } = require('./crosswind');
+const { normalizeTafForecast } = require('./taf_utils');
 
 function haversineDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
