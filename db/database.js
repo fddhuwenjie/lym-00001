@@ -24,6 +24,33 @@ function initDB() {
       CREATE INDEX IF NOT EXISTS idx_type ON weather_reports (type);
       CREATE INDEX IF NOT EXISTS idx_observation_time ON weather_reports (observation_time);
       CREATE INDEX IF NOT EXISTS idx_created_at ON weather_reports (created_at);
+
+      CREATE TABLE IF NOT EXISTS flight_routes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        departure_airport TEXT NOT NULL,
+        arrival_airport TEXT NOT NULL,
+        waypoints TEXT,
+        cruise_altitude INTEGER,
+        flight_duration INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_route_name ON flight_routes (name);
+      CREATE INDEX IF NOT EXISTS idx_route_departure ON flight_routes (departure_airport);
+      CREATE INDEX IF NOT EXISTS idx_route_arrival ON flight_routes (arrival_airport);
+
+      CREATE TABLE IF NOT EXISTS weather_briefings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        route_id INTEGER NOT NULL,
+        departure_time TEXT NOT NULL,
+        briefing_json TEXT NOT NULL,
+        risk_level TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_briefing_route ON weather_briefings (route_id);
+      CREATE INDEX IF NOT EXISTS idx_briefing_departure_time ON weather_briefings (departure_time);
+      CREATE INDEX IF NOT EXISTS idx_briefing_risk ON weather_briefings (risk_level);
     `);
     
     console.log('数据库初始化成功');
@@ -392,6 +419,237 @@ function getStats() {
   }
 }
 
+function createRoute(routeData) {
+  if (!db) {
+    initDB();
+    if (!db) return null;
+  }
+
+  try {
+    const stmt = db.prepare(`
+      INSERT INTO flight_routes (name, departure_airport, arrival_airport, waypoints, cruise_altitude, flight_duration)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    const result = stmt.run(
+      routeData.name,
+      routeData.departure_airport,
+      routeData.arrival_airport,
+      routeData.waypoints ? JSON.stringify(routeData.waypoints) : null,
+      routeData.cruise_altitude,
+      routeData.flight_duration
+    );
+    return result.lastInsertRowid;
+  } catch (error) {
+    console.error('创建航线失败:', error.message);
+    return null;
+  }
+}
+
+function getRouteById(id) {
+  if (!db) {
+    initDB();
+    if (!db) return null;
+  }
+
+  try {
+    const stmt = db.prepare('SELECT * FROM flight_routes WHERE id = ?');
+    const row = stmt.get(id);
+    if (row) {
+      return {
+        ...row,
+        waypoints: row.waypoints ? JSON.parse(row.waypoints) : []
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('查询航线失败:', error.message);
+    return null;
+  }
+}
+
+function searchRoutesByName(name) {
+  if (!db) {
+    initDB();
+    if (!db) return [];
+  }
+
+  try {
+    let sql = 'SELECT * FROM flight_routes';
+    const params = [];
+    
+    if (name) {
+      sql += ' WHERE name LIKE ?';
+      params.push(`%${name}%`);
+    }
+    sql += ' ORDER BY updated_at DESC';
+
+    const stmt = db.prepare(sql);
+    const rows = stmt.all(...params);
+    
+    return rows.map(row => ({
+      ...row,
+      waypoints: row.waypoints ? JSON.parse(row.waypoints) : []
+    }));
+  } catch (error) {
+    console.error('搜索航线失败:', error.message);
+    return [];
+  }
+}
+
+function updateRoute(id, routeData) {
+  if (!db) {
+    initDB();
+    if (!db) return false;
+  }
+
+  try {
+    const stmt = db.prepare(`
+      UPDATE flight_routes 
+      SET name = ?, departure_airport = ?, arrival_airport = ?, waypoints = ?, cruise_altitude = ?, flight_duration = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `);
+    const result = stmt.run(
+      routeData.name,
+      routeData.departure_airport,
+      routeData.arrival_airport,
+      routeData.waypoints ? JSON.stringify(routeData.waypoints) : null,
+      routeData.cruise_altitude,
+      routeData.flight_duration,
+      id
+    );
+    return result.changes > 0;
+  } catch (error) {
+    console.error('更新航线失败:', error.message);
+    return false;
+  }
+}
+
+function deleteRoute(id) {
+  if (!db) {
+    initDB();
+    if (!db) return false;
+  }
+
+  try {
+    const stmt = db.prepare('DELETE FROM flight_routes WHERE id = ?');
+    const result = stmt.run(id);
+    return result.changes > 0;
+  } catch (error) {
+    console.error('删除航线失败:', error.message);
+    return false;
+  }
+}
+
+function saveBriefing(routeId, departureTime, briefingJson, riskLevel) {
+  if (!db) {
+    initDB();
+    if (!db) return null;
+  }
+
+  try {
+    const stmt = db.prepare(`
+      INSERT INTO weather_briefings (route_id, departure_time, briefing_json, risk_level)
+      VALUES (?, ?, ?, ?)
+    `);
+    const result = stmt.run(
+      routeId,
+      departureTime,
+      JSON.stringify(briefingJson),
+      riskLevel
+    );
+    return result.lastInsertRowid;
+  } catch (error) {
+    console.error('保存简报失败:', error.message);
+    return null;
+  }
+}
+
+function getBriefingById(id) {
+  if (!db) {
+    initDB();
+    if (!db) return null;
+  }
+
+  try {
+    const stmt = db.prepare('SELECT * FROM weather_briefings WHERE id = ?');
+    const row = stmt.get(id);
+    if (row) {
+      return {
+        ...row,
+        briefing: row.briefing_json ? JSON.parse(row.briefing_json) : null
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('查询简报失败:', error.message);
+    return null;
+  }
+}
+
+function getBriefingsByRoute(routeId) {
+  if (!db) {
+    initDB();
+    if (!db) return [];
+  }
+
+  try {
+    const stmt = db.prepare('SELECT * FROM weather_briefings WHERE route_id = ? ORDER BY created_at DESC');
+    const rows = stmt.all(routeId);
+    return rows.map(row => ({
+      ...row,
+      briefing: row.briefing_json ? JSON.parse(row.briefing_json) : null
+    }));
+  } catch (error) {
+    console.error('查询航线简报失败:', error.message);
+    return [];
+  }
+}
+
+function getAllBriefings(limit = 100) {
+  if (!db) {
+    initDB();
+    if (!db) return [];
+  }
+
+  try {
+    const stmt = db.prepare('SELECT * FROM weather_briefings ORDER BY created_at DESC LIMIT ?');
+    const rows = stmt.all(limit);
+    return rows.map(row => ({
+      ...row,
+      briefing: row.briefing_json ? JSON.parse(row.briefing_json) : null
+    }));
+  } catch (error) {
+    console.error('查询所有简报失败:', error.message);
+    return [];
+  }
+}
+
+function getReportByTimeAndType(airport, targetTime, type = 'METAR', beforeMinutes = 360) {
+  if (!db) {
+    initDB();
+    if (!db) return null;
+  }
+
+  try {
+    const stmt = db.prepare(`
+      SELECT * FROM weather_reports
+      WHERE airport = ? AND type = ? AND observation_time <= ?
+      ORDER BY observation_time DESC LIMIT 1
+    `);
+    const row = stmt.get(airport, type, targetTime);
+    if (row) {
+      return {
+        ...row,
+        decoded: row.decoded_json ? JSON.parse(row.decoded_json) : null
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('按时间查询电报失败:', error.message);
+    return null;
+  }
+}
+
 module.exports = {
   initDB,
   saveReport,
@@ -403,5 +661,15 @@ module.exports = {
   getPreviousReport,
   getAllReports,
   deleteReport,
-  getStats
+  getStats,
+  createRoute,
+  getRouteById,
+  searchRoutesByName,
+  updateRoute,
+  deleteRoute,
+  saveBriefing,
+  getBriefingById,
+  getBriefingsByRoute,
+  getAllBriefings,
+  getReportByTimeAndType
 };

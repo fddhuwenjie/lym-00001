@@ -6,9 +6,18 @@ const { validateSingle, validateBatch, detectType } = require('./validators/vali
 const { 
   initDB, saveReport, queryByAirport, queryByTimeRange, 
   compareReports, compareLatestWithPrevious, getLatestReport, 
-  getAllReports, getStats, deleteReport 
+  getAllReports, getStats, deleteReport,
+  createRoute, getRouteById, searchRoutesByName, 
+  updateRoute, deleteRoute, getBriefingById,
+  getAllBriefings
 } = require('./db/database');
 const { findAirport, searchAirports, getAllAirports } = require('./data/airports');
+const { 
+  generateBriefing, getBriefing, getRouteBriefings, 
+  compareBriefings 
+} = require('./briefing/briefing');
+const { calculateCrosswindComponents, calculateAirportCrosswinds } = require('./briefing/crosswind');
+const { findAlternateAirports, haversineDistance } = require('./briefing/alternate');
 
 const app = express();
 const PORT = 8001;
@@ -30,7 +39,7 @@ app.use((req, res, next) => {
 app.get('/', (req, res) => {
   res.json({
     name: '航空气象电报解码 API 服务',
-    version: '1.0.0',
+    version: '2.0.0',
     endpoints: {
       'POST /api/decode/metar': 'METAR/SPECI 电报解码',
       'POST /api/decode/taf': 'TAF 预报电报解码',
@@ -43,7 +52,19 @@ app.get('/', (req, res) => {
       'GET  /api/airports/search?q=xxx': '搜索机场',
       'GET  /api/history/:airport': '查询机场历史电报',
       'GET  /api/history/compare/:airport': '对比机场电报变化',
-      'GET  /api/stats': '获取统计信息'
+      'GET  /api/stats': '获取统计信息',
+      '=== 飞行计划气象简报模块 ===': '=== /api/briefing ===',
+      'POST   /api/briefing/routes': '创建航线',
+      'GET    /api/briefing/routes': '查询航线列表（支持?name=搜索）',
+      'GET    /api/briefing/routes/:id': '查询单条航线',
+      'PUT    /api/briefing/routes/:id': '更新航线',
+      'DELETE /api/briefing/routes/:id': '删除航线',
+      'POST   /api/briefing/generate': '生成气象简报',
+      'GET    /api/briefing/:id': '查询简报详情',
+      'GET    /api/briefing/routes/:routeId/briefings': '查询航线历史简报',
+      'GET    /api/briefing/compare/:id1/:id2': '对比两份简报',
+      'POST   /api/briefing/crosswind': '侧风分量计算',
+      'GET    /api/briefing/alternate/:airport': '查询备降机场建议'
     }
   });
 });
@@ -426,6 +447,396 @@ app.get('/api/stats', (req, res) => {
     res.status(500).json({
       success: false,
       error: '获取统计信息失败: ' + error.message
+    });
+  }
+});
+
+app.post('/api/briefing/routes', (req, res) => {
+  try {
+    const { name, departure_airport, arrival_airport, waypoints, cruise_altitude, flight_duration } = req.body;
+
+    if (!name || !departure_airport || !arrival_airport) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必填参数：name, departure_airport, arrival_airport'
+      });
+    }
+
+    if (!findAirport(departure_airport)) {
+      return res.status(400).json({
+        success: false,
+        error: `起飞机场 ${departure_airport} 不在机场字典中`
+      });
+    }
+
+    if (!findAirport(arrival_airport)) {
+      return res.status(400).json({
+        success: false,
+        error: `降落机场 ${arrival_airport} 不在机场字典中`
+      });
+    }
+
+    if (waypoints && Array.isArray(waypoints)) {
+      for (const wp of waypoints) {
+        if (!findAirport(wp)) {
+          return res.status(400).json({
+            success: false,
+            error: `途经点 ${wp} 不在机场字典中`
+          });
+        }
+      }
+    }
+
+    const routeId = createRoute({
+      name,
+      departure_airport: departure_airport.toUpperCase(),
+      arrival_airport: arrival_airport.toUpperCase(),
+      waypoints: waypoints ? waypoints.map(w => w.toUpperCase()) : [],
+      cruise_altitude: cruise_altitude || null,
+      flight_duration: flight_duration || null
+    });
+
+    if (!routeId) {
+      return res.status(400).json({
+        success: false,
+        error: '航线名称可能已存在，请使用其他名称'
+      });
+    }
+
+    const route = getRouteById(routeId);
+    res.json({
+      success: true,
+      message: '航线创建成功',
+      data: route
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: '创建航线失败: ' + error.message
+    });
+  }
+});
+
+app.get('/api/briefing/routes', (req, res) => {
+  try {
+    const { name } = req.query;
+    const routes = searchRoutesByName(name || '');
+    res.json({
+      success: true,
+      count: routes.length,
+      data: routes
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: '查询航线失败: ' + error.message
+    });
+  }
+});
+
+app.get('/api/briefing/routes/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const route = getRouteById(parseInt(id));
+
+    if (!route) {
+      return res.status(404).json({
+        success: false,
+        error: '未找到该航线'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: route
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: '查询航线失败: ' + error.message
+    });
+  }
+});
+
+app.put('/api/briefing/routes/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, departure_airport, arrival_airport, waypoints, cruise_altitude, flight_duration } = req.body;
+
+    const existingRoute = getRouteById(parseInt(id));
+    if (!existingRoute) {
+      return res.status(404).json({
+        success: false,
+        error: '未找到该航线'
+      });
+    }
+
+    if (departure_airport && !findAirport(departure_airport)) {
+      return res.status(400).json({
+        success: false,
+        error: `起飞机场 ${departure_airport} 不在机场字典中`
+      });
+    }
+
+    if (arrival_airport && !findAirport(arrival_airport)) {
+      return res.status(400).json({
+        success: false,
+        error: `降落机场 ${arrival_airport} 不在机场字典中`
+      });
+    }
+
+    if (waypoints && Array.isArray(waypoints)) {
+      for (const wp of waypoints) {
+        if (!findAirport(wp)) {
+          return res.status(400).json({
+            success: false,
+            error: `途经点 ${wp} 不在机场字典中`
+          });
+        }
+      }
+    }
+
+    const updated = updateRoute(parseInt(id), {
+      name: name || existingRoute.name,
+      departure_airport: (departure_airport || existingRoute.departure_airport).toUpperCase(),
+      arrival_airport: (arrival_airport || existingRoute.arrival_airport).toUpperCase(),
+      waypoints: waypoints ? waypoints.map(w => w.toUpperCase()) : existingRoute.waypoints,
+      cruise_altitude: cruise_altitude != null ? cruise_altitude : existingRoute.cruise_altitude,
+      flight_duration: flight_duration != null ? flight_duration : existingRoute.flight_duration
+    });
+
+    if (!updated) {
+      return res.status(400).json({
+        success: false,
+        error: '更新失败，航线名称可能已被占用'
+      });
+    }
+
+    const route = getRouteById(parseInt(id));
+    res.json({
+      success: true,
+      message: '航线更新成功',
+      data: route
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: '更新航线失败: ' + error.message
+    });
+  }
+});
+
+app.delete('/api/briefing/routes/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleted = deleteRoute(parseInt(id));
+
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        error: '未找到该航线'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: '航线删除成功'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: '删除航线失败: ' + error.message
+    });
+  }
+});
+
+app.post('/api/briefing/generate', async (req, res) => {
+  try {
+    const { route_id, departure_time, departure_runways, arrival_runways, alternate_radius_km, max_alternates } = req.body;
+
+    if (!route_id || !departure_time) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必填参数：route_id, departure_time'
+      });
+    }
+
+    const result = await generateBriefing(parseInt(route_id), departure_time, {
+      departureRunways: departure_runways || [],
+      arrivalRunways: arrival_runways || [],
+      alternateRadiusKm: alternate_radius_km || 300,
+      maxAlternates: max_alternates || 3
+    });
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    res.json({
+      success: true,
+      briefingId: result.briefingId,
+      data: result.briefing
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: '生成简报失败: ' + error.message,
+      stack: error.stack
+    });
+  }
+});
+
+app.get('/api/briefing/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = getBriefing(parseInt(id));
+
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: '查询简报失败: ' + error.message
+    });
+  }
+});
+
+app.get('/api/briefing/routes/:routeId/briefings', (req, res) => {
+  try {
+    const { routeId } = req.params;
+    const result = getRouteBriefings(parseInt(routeId));
+
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: '查询航线简报历史失败: ' + error.message
+    });
+  }
+});
+
+app.get('/api/briefing/compare/:id1/:id2', (req, res) => {
+  try {
+    const { id1, id2 } = req.params;
+    const result = compareBriefings(parseInt(id1), parseInt(id2));
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: '对比简报失败: ' + error.message
+    });
+  }
+});
+
+app.post('/api/briefing/crosswind', (req, res) => {
+  try {
+    const { runway_heading, wind_direction, wind_speed, wind_unit, decoded_metar } = req.body;
+
+    if (decoded_metar) {
+      const runwayHeadings = runway_heading != null ? [runway_heading] : [];
+      const result = calculateAirportCrosswinds(decoded_metar, runwayHeadings);
+      return res.json({
+        success: true,
+        data: result
+      });
+    }
+
+    if (runway_heading == null || wind_direction == null || wind_speed == null) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必填参数：runway_heading, wind_direction, wind_speed 或 decoded_metar'
+      });
+    }
+
+    const result = calculateCrosswindComponents(
+      parseInt(runway_heading),
+      parseInt(wind_direction),
+      parseFloat(wind_speed),
+      wind_unit || 'KT'
+    );
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: '侧风计算失败: ' + error.message
+    });
+  }
+});
+
+app.get('/api/briefing/alternate/:airport', async (req, res) => {
+  try {
+    const { airport } = req.params;
+    const { target_time, radius_km, max_results } = req.query;
+
+    const result = await findAlternateAirports(
+      airport.toUpperCase(),
+      target_time,
+      parseInt(radius_km) || 300,
+      parseInt(max_results) || 3
+    );
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: '查询备降机场失败: ' + error.message
+    });
+  }
+});
+
+app.get('/api/briefing', (req, res) => {
+  try {
+    const { limit = 50 } = req.query;
+    const briefings = getAllBriefings(parseInt(limit));
+
+    res.json({
+      success: true,
+      count: briefings.length,
+      data: briefings.map(b => ({
+        id: b.id,
+        routeId: b.route_id,
+        departureTime: b.departure_time,
+        riskLevel: b.risk_level,
+        createdAt: b.created_at,
+        summary: b.briefing?.riskAssessment?.summary || null
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: '查询简报列表失败: ' + error.message
     });
   }
 });
