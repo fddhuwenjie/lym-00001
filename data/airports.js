@@ -1,10 +1,11 @@
 const airports = {
   ZBAA: { code: 'ZBAA', name: '北京首都国际机场', city: '北京', country: 'CN', lat: 40.0801, lon: 116.5846, elevation: 35 },
+  ZBAD: { code: 'ZBAD', name: '北京大兴国际机场', city: '北京', country: 'CN', lat: 39.5092, lon: 116.4108, elevation: 31 },
   ZSPD: { code: 'ZSPD', name: '上海浦东国际机场', city: '上海', country: 'CN', lat: 31.1434, lon: 121.8058, elevation: 4 },
   ZSSS: { code: 'ZSSS', name: '上海虹桥国际机场', city: '上海', country: 'CN', lat: 31.1979, lon: 121.3363, elevation: 3 },
   ZGGG: { code: 'ZGGG', name: '广州白云国际机场', city: '广州', country: 'CN', lat: 23.3924, lon: 113.2988, elevation: 35 },
   ZUUU: { code: 'ZUUU', name: '成都双流国际机场', city: '成都', country: 'CN', lat: 30.5785, lon: 103.9471, elevation: 509 },
-  ZUUU_CTU: { code: 'ZUTF', name: '成都天府国际机场', city: '成都', country: 'CN', lat: 30.3357, lon: 104.4463, elevation: 449 },
+  ZUTF: { code: 'ZUTF', name: '成都天府国际机场', city: '成都', country: 'CN', lat: 30.3357, lon: 104.4463, elevation: 449 },
   ZLXY: { code: 'ZLXY', name: '西安咸阳国际机场', city: '西安', country: 'CN', lat: 34.4472, lon: 108.7517, elevation: 479 },
   ZUCK: { code: 'ZUCK', name: '重庆江北国际机场', city: '重庆', country: 'CN', lat: 29.7192, lon: 106.6417, elevation: 419 },
   ZHCC: { code: 'ZHCC', name: '郑州新郑国际机场', city: '郑州', country: 'CN', lat: 34.5197, lon: 113.8427, elevation: 152 },
@@ -15,7 +16,11 @@ const airports = {
   ZYTL: { code: 'ZYTL', name: '大连周水子国际机场', city: '大连', country: 'CN', lat: 38.9657, lon: 121.5375, elevation: 31 },
   ZSNJ: { code: 'ZSNJ', name: '南京禄口国际机场', city: '南京', country: 'CN', lat: 31.7420, lon: 118.8620, elevation: 15 },
   ZSCN: { code: 'ZSCN', name: '南昌昌北国际机场', city: '南昌', country: 'CN', lat: 28.8690, lon: 115.9310, elevation: 43 },
-  ZUCK_CKG: { code: 'ZUCK', name: '重庆江北国际机场', city: '重庆', country: 'CN', lat: 29.7192, lon: 106.6417, elevation: 419 },
+  ZSHC: { code: 'ZSHC', name: '杭州萧山国际机场', city: '杭州', country: 'CN', lat: 30.2368, lon: 120.4342, elevation: 11 },
+  ZSQD: { code: 'ZSQD', name: '青岛流亭国际机场', city: '青岛', country: 'CN', lat: 36.2658, lon: 120.3744, elevation: 33 },
+  ZGHA: { code: 'ZGHA', name: '长沙黄花国际机场', city: '长沙', country: 'CN', lat: 28.1893, lon: 113.2208, elevation: 72 },
+  ZGOW: { code: 'ZGOW', name: '揭阳潮汕国际机场', city: '揭阳', country: 'CN', lat: 23.5553, lon: 116.5092, elevation: 18 },
+  ZHKG: { code: 'ZHKG', name: '海口美兰国际机场', city: '海口', country: 'CN', lat: 19.9368, lon: 110.4578, elevation: 21 },
   KJFK: { code: 'KJFK', name: '纽约肯尼迪国际机场', city: '纽约', country: 'US', lat: 40.6398, lon: -73.7789, elevation: 4 },
   KLAX: { code: 'KLAX', name: '洛杉矶国际机场', city: '洛杉矶', country: 'US', lat: 33.9425, lon: -118.4081, elevation: 39 },
   KORD: { code: 'KORD', name: '芝加哥奥黑尔国际机场', city: '芝加哥', country: 'US', lat: 41.9786, lon: -87.9048, elevation: 204 },
@@ -30,15 +35,16 @@ const airports = {
   WSSS: { code: 'WSSS', name: '新加坡樟宜机场', city: '新加坡', country: 'SG', lat: 1.3502, lon: 103.9944, elevation: 7 },
   YSSY: { code: 'YSSY', name: '悉尼金斯福德史密斯机场', city: '悉尼', country: 'AU', lat: -33.9461, lon: 151.1772, elevation: 6 },
   CYYZ: { code: 'CYYZ', name: '多伦多皮尔逊国际机场', city: '多伦多', country: 'CA', lat: 43.6767, lon: -79.6306, elevation: 173 },
-  UUEE: { code: 'UUEE', name: '莫斯科谢列梅捷沃机场', city: '莫斯科', country: 'RU', lat: 55.9723, lon: 37.4108, elevation: 189 }
+  UUEE: { code: 'UUEE', name: '莫斯科谢列梅捷沃机场', city: '莫斯科', country: 'RU', lat: 55.9723, lon: 37.4108, elevation: 189 },
+  OMDB: { code: 'OMDB', name: '迪拜国际机场', city: '迪拜', country: 'AE', lat: 25.2528, lon: 55.3644, elevation: 62 },
+  RKSI: { code: 'RKSI', name: '首尔仁川国际机场', city: '首尔', country: 'KR', lat: 37.4692, lon: 126.4506, elevation: 23 },
+  VMMC: { code: 'VMMC', name: '澳门国际机场', city: '澳门', country: 'MO', lat: 22.1497, lon: 113.5917, elevation: 6 }
 };
 
-const airportList = Object.values(airports).filter((v, i, a) => 
-  a.findIndex(t => t.code === v.code) === i
-);
+const airportList = Object.values(airports);
 
 function findAirport(code) {
-  return airportList.find(a => a.code === code) || null;
+  return airportList.find(a => a.code === code.toUpperCase()) || null;
 }
 
 function searchAirports(query) {
